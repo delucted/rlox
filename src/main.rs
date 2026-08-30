@@ -13,6 +13,10 @@ use language::lexer::Lexer;
 fn run(source: String) -> Result<&'static str, &'static str> {
     let mut lexer = Lexer::new(source);
     lexer.scan_tokens();
+    
+    if lexer.had_error {
+        return Err("rlox lexer failed")
+    }
 
     for token in lexer.iter() {
         println!("{token:?}")
@@ -22,8 +26,8 @@ fn run(source: String) -> Result<&'static str, &'static str> {
 }
 
 fn run_repl() {
+    println!("rlox REPL - Welcome.");
     loop {
-        println!("rlox REPL - Welcome.");
         print!("> ");
         io::stdout().flush().unwrap();
         let mut source = String::new();
@@ -36,11 +40,13 @@ fn run_repl() {
             _ => {}
         }
 
-        run(source).expect("");
+        match run(source) {
+            _ => {  }
+        }
     }
 }
 
-fn run_file(path: &str) -> Result<&str, &str> {
+fn run_file(path: &str) -> Result<&'static str, &'static str> {
     // TODO: convert into buffer to save memory
     run(match fs::read_to_string(path) {
         Ok(source) => source,
