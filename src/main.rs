@@ -9,6 +9,8 @@ use std::env;
 use std::fs;
 use std::io::{self, Write};
 use language::lexer::Lexer;
+use crate::language::parser::Parser;
+use crate::util::display;
 
 fn run(source: String) -> Result<&'static str, &'static str> {
     let mut lexer = Lexer::new(source);
@@ -18,9 +20,11 @@ fn run(source: String) -> Result<&'static str, &'static str> {
         return Err("rlox lexer failed")
     }
 
-    for token in lexer.iter() {
-        println!("{token:?}")
-    }
+    let mut parser = Parser::new(lexer.tokens);
+    
+    let expression = parser.parse()?;
+    
+    println!("{}", display::print_expr(&expression));
 
     Ok("rlox successfully executed source")
 }

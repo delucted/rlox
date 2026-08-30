@@ -10,7 +10,7 @@ pub enum Literal {
 
 #[derive(Debug, Clone)]
 pub struct Token {
-    pub _type: TokenType,
+    pub kind: TokenType,
     pub lexeme: String,
     pub literal: Option<Literal>,
     pub line: u32

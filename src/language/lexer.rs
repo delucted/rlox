@@ -1,8 +1,6 @@
 use crate::language::token::{Literal, Token};
 use crate::language::token_type::TokenType;
 use crate::util::errors::error;
-use std::collections::HashMap;
-use std::sync::OnceLock;
 
 fn get_by_keyword(keyword: &str) -> Option<TokenType> {
     match keyword {
@@ -27,17 +25,13 @@ fn get_by_keyword(keyword: &str) -> Option<TokenType> {
 pub struct Lexer {
     pub source: String,
     pub had_error: bool,
-    tokens: Vec<Token>,
+    pub tokens: Vec<Token>,
     start: usize,
     current: usize,
     line: u32
 }
 
 impl Lexer {
-    pub(crate) fn iter(&self) -> impl Iterator<Item = &Token> {
-        self.tokens.iter()
-    }
-
     pub(crate) fn new(source: String) -> Self {
         Lexer {
             line: 1,
@@ -59,13 +53,13 @@ impl Lexer {
         Some(c)
     }
 
-    fn add_token(&mut self, _type: TokenType, literal: Option<Literal>) {
+    fn add_token(&mut self, kind: TokenType, literal: Option<Literal>) {
         let lexeme = self.source[self.start..self.current].to_owned();
-        self.tokens.push(Token {_type, literal, line: self.line, lexeme})
+        self.tokens.push(Token {kind, literal, line: self.line, lexeme})
     }
 
-    fn token(&mut self, _type: TokenType) {
-        self.add_token(_type, None)
+    fn token(&mut self, kind: TokenType) {
+        self.add_token(kind, None)
     }
 
     fn _match(&mut self, expected: char) -> bool {
@@ -259,7 +253,7 @@ impl Lexer {
         }
 
         self.tokens.push(Token {
-            _type: TokenType::EOF,
+            kind: TokenType::EOF,
             lexeme: "".to_owned(),
             literal: None,
             line: self.line
