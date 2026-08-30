@@ -1,46 +1,36 @@
 use crate::language::token::{Literal, Token};
 use crate::language::token_type::TokenType;
-use crate::util::errors::{error, kill};
+use crate::util::errors::error;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-static KEYWORDS: OnceLock<HashMap<&'static str, TokenType>> = OnceLock::new();
-
-fn keywords() -> &'static HashMap<&'static str, TokenType> {
-    KEYWORDS.get_or_init(|| {
-        HashMap::from([
-            ("and", TokenType::And),
-            ("class", TokenType::Class),
-            ("else", TokenType::Else),
-            ("false", TokenType::False),
-            ("for", TokenType::For),
-            ("fun", TokenType::Fun),
-            ("if", TokenType::If),
-            ("nil", TokenType::Nil),
-            ("or", TokenType::Or),
-            ("print", TokenType::Print),
-            ("return", TokenType::Return),
-            ("super", TokenType::Super),
-            ("this", TokenType::This),
-            ("true", TokenType::True),
-            ("var", TokenType::Var),
-            ("while", TokenType::While),
-        ])
-    })
-}
-
 fn get_by_keyword(keyword: &str) -> Option<TokenType> {
-    keywords().get(keyword).copied()
+    match keyword {
+        "false" => Some(TokenType::False),
+        "for" => Some(TokenType::For),
+        "fun" => Some(TokenType::Fun),
+        "if" => Some(TokenType::If),
+        "nil" => Some(TokenType::Nil),
+        "or" => Some(TokenType::Or),
+        "print" => Some(TokenType::Print),
+        "return" => Some(TokenType::Return),
+        "super" => Some(TokenType::Super),
+        "this" => Some(TokenType::This),
+        "true" => Some(TokenType::True),
+        "var" => Some(TokenType::Var),
+        "while" => Some(TokenType::While),
+        _ => None,
+    }
 }
 
 #[derive(Default)]
 pub struct Lexer {
     pub source: String,
+    pub had_error: bool,
     tokens: Vec<Token>,
     start: usize,
     current: usize,
-    line: u32,
-    line_src: String
+    line: u32
 }
 
 impl Lexer {
@@ -60,13 +50,13 @@ impl Lexer {
         self.current >= self.source.len()
     }
 
-    fn advance(&mut self) -> char {
-        let c = self.source.chars()
-            .nth(self.current)
-            .unwrap();
-        self.current += 1;
-        self.line_src.push(c);
-        c
+    fn advance(&mut self) -> Option<char> {
+        if self.had_error {
+            return None
+        }
+        let c = self.source[self.current..].chars().next().unwrap();
+        self.current += c.len_utf8();
+        Some(c)
     }
 
     fn add_token(&mut self, _type: TokenType, literal: Option<Literal>) {
@@ -82,7 +72,7 @@ impl Lexer {
         if self.end() {
             return false
         }
-        if !(self.source.chars().nth(self.current).unwrap() == expected) {
+        if !(self.source[self.current..].chars().next().unwrap() == expected) {
             return false
         }
 
@@ -90,26 +80,24 @@ impl Lexer {
         true
     }
 
-    fn peek(&self, offset: Option<usize>) -> char {
-        let index = self.current + offset.unwrap_or_else(|| 0);
-        if index >= self.source.len() {
-            return '\0'
-        }
-        self.source.chars().nth(index).unwrap()
+    fn peek(&self) -> char {
+        self.source[self.current..].chars().next().unwrap_or('\0')
     }
 
-    fn line_preview(&self) -> String {
-        let remaining_line = self.source[self.current..]
-            .split('\n')
-            .next()
-            .unwrap_or("");
+    fn peek_next(&self) -> char {
+        self.source[self.current+1..].chars().next().unwrap_or('\0')
+    }
 
-        let complete_line = format!("{}{}", self.line_src, remaining_line);
+    fn line_of(&self, pos: usize) -> &str {
+        let start = self.source[..pos].rfind('\n').map_or(0, |i| i + 1);
+        let end = self.source[pos..].find('\n').map_or(self.source.len(), |i| pos + i);
+        &self.source[start..end]
+    }
 
-        let mut characters = complete_line.chars();
-        let preview: String = characters.by_ref().take(40).collect();
-
-        if characters.next().is_some() {
+    fn line_preview(&self, pos: usize) -> String {
+        let mut chars = self.line_of(pos).chars();
+        let preview: String = chars.by_ref().take(40).collect();
+        if chars.next().is_some() {
             format!("{preview}... (truncated)")
         } else {
             preview
@@ -117,18 +105,25 @@ impl Lexer {
     }
 
     fn string(&mut self) {
-        while self.peek(None) != '"' && !self.end() {
-            let c = self.advance();
+        while self.peek() != '"' && !self.end() {
+            let c = match self.advance() {
+                None => {
+                    error(self.line, &self.line_preview(self.start), "unterminated string");
+                    self.had_error = true;
+                    return
+                }
+                Some(c) => c,
+            };
 
             if c == '\n' {
                 self.line += 1;
-                self.line_src.clear();
             }
         }
 
         if self.end() {
-            let line = self.line_preview();
-            kill(self.line, &line, "unterminated string")
+            let line = self.line_preview(self.start);
+            error(self.line, &line, "unterminated string");
+            self.had_error = true;
         }
 
         // Consume the closing quote.
@@ -140,14 +135,14 @@ impl Lexer {
     }
 
     fn number(&mut self) {
-        while self.peek(None).is_digit(10) {
+        while self.peek().is_digit(10) {
             self.advance();
         }
 
-        if self.peek(None) == '.' && self.peek(Some(1)).is_digit(10) {
+        if self.peek() == '.' && self.peek_next().is_digit(10) {
             self.advance();
 
-            while self.peek(None).is_digit(10) {
+            while self.peek().is_digit(10) {
                 self.advance();
             }
         }
@@ -162,7 +157,7 @@ impl Lexer {
     }
 
     fn identifier(&mut self) {
-        while self.peek(None).is_alphanumeric() || self.peek(None) == '_' {
+        while self.peek().is_ascii_alphanumeric() || self.peek() == '_' {
             self.advance();
         }
 
@@ -171,7 +166,11 @@ impl Lexer {
     }
 
     fn scan_token(&mut self) {
-        let c = self.advance();
+        let next = self.advance();
+        let c = match next {
+            None => return,
+            Some(c) => c
+        };
 
         match c {
             '(' => self.token(TokenType::LeftParen),
@@ -226,7 +225,7 @@ impl Lexer {
             }
             '/' => {
                 if self._match('/') {
-                    while !(self.peek(None) == '\n') && !self.end() {
+                    while !(self.peek() == '\n') && !self.end() {
                         self.advance();
                     }
                 } else {
@@ -236,19 +235,20 @@ impl Lexer {
             ' ' => {}
             '\r' => {}
             '\t' => {}
-            '\n' => { self.line += 1; self.line_src.clear(); }
+            '\n' => self.line += 1,
             '"' => self.string(),
             _ => {
                 if c.is_digit(10) {
                     self.number();
                     return;
                 }
-                if c.is_alphabetic() || c == '_' {
+                if c.is_ascii_alphabetic() || c == '_' {
                     self.identifier();
                     return;
                 }
-                let line = self.line_preview();
-                kill(self.line, &line, "unexpected character \"{c}\"")
+                let line = self.line_preview(self.start);
+                error(self.line, &line, &format!("unexpected character \"{c}\""));
+                self.had_error = true;
             }
         }
     }
