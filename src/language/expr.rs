@@ -5,5 +5,7 @@ pub enum Expr {
     Binary { left: Box<Expr>, operator: Token, right: Box<Expr> },
     Grouping { expression: Box<Expr> },
     Literal { value: Literal },
-    Unary { operator: Token, right: Box<Expr> }
+    Unary { operator: Token, right: Box<Expr> },
+    //Stmt { expression: Box<Expr> },
+    //Print { expr: Box<Expr> } // TODO: convert to standard lib function
 }

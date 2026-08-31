@@ -1,6 +1,6 @@
 use crate::language::token::{Literal, Token};
 use crate::language::token_type::TokenType;
-use crate::util::errors::lexer_error;
+use crate::util::errors::{LoxError, LexError};
 
 fn get_by_keyword(keyword: &str) -> Option<TokenType> {
     match keyword {
@@ -23,12 +23,12 @@ fn get_by_keyword(keyword: &str) -> Option<TokenType> {
 
 #[derive(Default)]
 pub struct Lexer {
-    pub source: String,
-    pub had_error: bool,
-    pub tokens: Vec<Token>,
+    source: String,
+    tokens: Vec<Token>,
     start: usize,
     current: usize,
-    line: u32
+    line: u32,
+    errors: Vec<LexError>
 }
 
 impl Lexer {
@@ -44,13 +44,10 @@ impl Lexer {
         self.current >= self.source.len()
     }
 
-    fn advance(&mut self) -> Option<char> {
-        if self.had_error {
-            return None
-        }
+    fn advance(&mut self) -> char {
         let c = self.source[self.current..].chars().next().unwrap();
         self.current += c.len_utf8();
-        Some(c)
+        c
     }
 
     fn add_token(&mut self, kind: TokenType, literal: Option<Literal>) {
@@ -100,14 +97,7 @@ impl Lexer {
 
     fn string(&mut self) {
         while self.peek() != '"' && !self.end() {
-            let c = match self.advance() {
-                None => {
-                    lexer_error(self.line, &self.line_preview(self.start), "unterminated string");
-                    self.had_error = true;
-                    return
-                }
-                Some(c) => c,
-            };
+            let c = self.advance();
 
             if c == '\n' {
                 self.line += 1;
@@ -116,8 +106,12 @@ impl Lexer {
 
         if self.end() {
             let line = self.line_preview(self.start);
-            lexer_error(self.line, &line, "unterminated string");
-            self.had_error = true;
+            self.errors.push(LexError {
+                line: self.line,
+                preview: self.line_preview(self.current - 1),
+                message: String::from("unterminated string")
+            });
+            return;
         }
 
         // Consume the closing quote.
@@ -160,11 +154,7 @@ impl Lexer {
     }
 
     fn scan_token(&mut self) {
-        let next = self.advance();
-        let c = match next {
-            None => return,
-            Some(c) => c
-        };
+        let c = self.advance();
 
         match c {
             '(' => self.token(TokenType::LeftParen),
@@ -241,12 +231,15 @@ impl Lexer {
                     return;
                 }
                 let line = self.line_preview(self.start);
-                lexer_error(self.line, &line, &format!("unexpected character \"{c}\""));
-                self.had_error = true;
+                self.errors.push(LexError {
+                    line: self.line,
+                    preview: self.line_preview(self.current),
+                    message: String::from("unexpected character")
+                });
             }
         }
     }
-    pub(crate) fn scan_tokens(&mut self) {
+    pub(crate) fn scan_tokens(mut self) -> Result<Vec<Token>, Vec<LexError>> {
         while !self.end() {
             self.start = self.current;
             self.scan_token();
@@ -258,5 +251,11 @@ impl Lexer {
             literal: None,
             line: self.line
         });
+
+        if self.errors.is_empty() {
+            Ok(self.tokens)
+        } else {
+            Err(self.errors)
+        }
     }
 }

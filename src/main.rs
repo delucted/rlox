@@ -9,30 +9,21 @@ use std::env;
 use std::error::Error;
 use std::fs;
 use std::io::{self, Write};
+use std::process::ExitCode;
 use language::lexer::Lexer;
 use crate::language::interpreter::Interpreter;
 use crate::language::parser::Parser;
+use crate::util::errors::LoxError;
 
-fn run(source: String, interpreter: &Interpreter) -> Result<&'static str, &'static str> {
-    let mut lexer = Lexer::new(source);
-    lexer.scan_tokens();
-    
-    if lexer.had_error {
-        return Err("rlox lexer failed")
-    }
-
-    let mut parser = Parser::new(lexer.tokens);
-
-    let expression = parser.parse()?;
-
-    let interpreted = interpreter.interpret(expression)?;
-
-    println!("{interpreted:?}");
-
-    Ok("rlox successfully executed source")
+fn run(source: String, interpreter: &Interpreter) -> Result<(), LoxError> {
+    let tokens = Lexer::new(source).scan_tokens()?;
+    let expression = Parser::new(tokens).parse()?;
+    let value = interpreter.interpret(expression)?;
+    println!("{value:?}");
+    Ok(())
 }
 
-fn run_repl(interpreter: &Interpreter) -> Result<(), String> {
+fn run_repl(interpreter: &Interpreter) {
     println!("rlox REPL - Welcome.");
     loop {
         print!("> ");
@@ -43,33 +34,41 @@ fn run_repl(interpreter: &Interpreter) -> Result<(), String> {
             .read_line(&mut source);
 
         match res {
-            Err(e) => return Err(e.to_string()),
-            _ => {}
+            Err(e) => { eprintln!("{e}"); break; },
+            Ok(0) => break,
+            Ok(_) => {}
         }
 
-        match run(source, interpreter) {
-            _ => {  }
+        if let Err(err) = run(source, interpreter) {
+            eprintln!("{err}");
         }
     }
 }
 
-fn run_file(path: &str, interpreter: &Interpreter) -> Result<&'static str, &'static str> {
-    // TODO: convert into buffer to save memory
-    run(match fs::read_to_string(path) {
-        Ok(source) => source,
-        Err(e) => panic!("Unable to read file \"{path}\": {e}")
-    }, interpreter)
+fn run_file(path: &str, interpreter: &Interpreter) -> ExitCode {
+    let source = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Unable to read \"{path}\": {e}");
+            return ExitCode::from(66);
+        }
+    };
+    match run(source, interpreter) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::from(e.exit_code())
+        }
+    }
 }
 
-fn main() -> Result<(), String> {
+fn main() -> ExitCode {
     let interpreter = Interpreter {};
     let args: Vec<String> = env::args().collect();
 
     match args.len() {
-        1 => run_repl(&interpreter)?,
-        2 => { run_file(&args[1], &interpreter)?; },
-        _ => eprintln!("Usages:\n\trlox\n\trlox [file]")
-    };
-
-    Ok(())
+        1 => { run_repl(&interpreter); return ExitCode::SUCCESS } ,
+        2 => { return run_file(&args[1], &interpreter) },
+        _ => { eprintln!("Usages:\n\trlox\n\trlox [file]"); ExitCode::SUCCESS }
+    }
 }

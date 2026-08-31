@@ -1,38 +1,32 @@
 use crate::language::expr::Expr;
-use crate::language::token::Literal;
+use crate::language::token::{Literal, Token};
 use crate::language::token_type::TokenType;
-use crate::util::errors::runtime_error;
+use crate::util::errors::RuntimeError;
 
 pub struct Interpreter {
 
 }
 
 impl Interpreter {
-    fn is_truthy(&self, literal: Literal) -> bool {
+    fn is_truthy(&self, literal: &Literal) -> bool {
         match literal {
-            Literal::Boolean(b) => b,
+            Literal::Boolean(b) => b.clone(),
             Literal::Nil => false,
             _=>true
         }
     }
 
-    fn eval_number(&self, literal: Literal) -> Result<f64, &'static str> {
+    fn eval_number(&self, operator: &Token, literal: &Literal) -> Result<f64, RuntimeError> {
         Ok(match literal {
-            Literal::Number(n) => n,
-            _=>return Err("operand must be number")
+            Literal::Number(n) => n.clone(),
+            _=>return Err(RuntimeError {
+                token: operator.clone(),
+                message: String::from("operand must be number")
+            })
         })
     }
 
-    fn is_equal(&self, a: Literal, b: Literal) -> bool {
-        if a == Literal::Nil && b == Literal::Nil {
-            return true
-        }
-        if a == Literal::Nil {
-            return false
-        }
-        a == b
-    }
-    fn evaluate(&self, expr: &Expr) -> Result<Literal, &'static str> {
+    fn evaluate(&self, expr: &Expr) -> Result<Literal, RuntimeError> {
         Ok(match expr {
 
             Expr::Grouping {expression} => self.evaluate(expression)?,
@@ -45,11 +39,17 @@ impl Interpreter {
                     TokenType::Minus => Literal::Number(
                         match right_eval {
                             Literal::Number(n) => -n,
-                            _=> return Err("operand must be number")
+                            _=> return Err(RuntimeError {
+                                token: operator.clone(),
+                                message: String::from("operand must be number")
+                            })
                         }
                     ),
-                    TokenType::Bang => Literal::Boolean(!self.is_truthy(right_eval)),
-                    _=> return Err("invalid unary operator")
+                    TokenType::Bang => Literal::Boolean(!self.is_truthy(&right_eval)),
+                    _=> return Err(RuntimeError {
+                        token: operator.clone(),
+                        message: String::from("invalid unary operator")
+                    })
                 }
             }
 
@@ -59,13 +59,13 @@ impl Interpreter {
 
                 match operator.kind {
                     TokenType::Minus => Literal::Number(
-                        self.eval_number(left_eval)? - self.eval_number(right_eval)?
+                        self.eval_number(operator, &left_eval)? - self.eval_number(operator, &right_eval)?
                     ),
                     TokenType::Slash => Literal::Number(
-                        self.eval_number(left_eval)? / self.eval_number(right_eval)?
+                        self.eval_number(operator, &left_eval)? / self.eval_number(operator, &right_eval)?
                     ),
                     TokenType::Star => Literal::Number(
-                        self.eval_number(left_eval)? * self.eval_number(right_eval)?
+                        self.eval_number(operator, &left_eval)? * self.eval_number(operator, &right_eval)?
                     ),
                     TokenType::Plus => {
                         match (left_eval, right_eval) {
@@ -78,44 +78,44 @@ impl Interpreter {
                                 l.push_str(&r);
                                 Literal::String(l)
                             }
-                            _ => return Err("operands must be two numbers or two strings")
+                            _ => return Err(RuntimeError {
+                                token: operator.clone(),
+                                message: String::from("operand must be two numbers or two strings")
+                            })
                         }
                     }
                     TokenType::Greater => {
                         Literal::Boolean(
-                            self.eval_number(left_eval)? > self.eval_number(right_eval)?
+                            self.eval_number(operator, &left_eval)? > self.eval_number(operator, &right_eval)?
                         )
                     }
                     TokenType::GreaterEqual => {
                         Literal::Boolean(
-                            self.eval_number(left_eval)? >= self.eval_number(right_eval)?
+                            self.eval_number(operator, &left_eval)? >= self.eval_number(operator, &right_eval)?
                         )
                     }
                     TokenType::Less => {
                         Literal::Boolean(
-                            self.eval_number(left_eval)? < self.eval_number(right_eval)?
+                            self.eval_number(operator, &left_eval)? < self.eval_number(operator, &right_eval)?
                         )
                     }
                     TokenType::LessEqual => {
                         Literal::Boolean(
-                            self.eval_number(left_eval)? <= self.eval_number(right_eval)?
+                            self.eval_number(operator, &left_eval)? <= self.eval_number(operator, &right_eval)?
                         )
                     }
-                    TokenType::BangEqual => Literal::Boolean(!self.is_equal(left_eval, right_eval)),
-                    TokenType::EqualEqual => Literal::Boolean(self.is_equal(left_eval, right_eval)),
-                    _ => return Err("invalid binary operator")
+                    TokenType::BangEqual => Literal::Boolean(!(left_eval == right_eval)),
+                    TokenType::EqualEqual => Literal::Boolean(left_eval == right_eval),
+                    _ => return Err(RuntimeError {
+                        token: operator.clone(),
+                        message: String::from("invalid binary operator")
+                    })
                 }
             }
         })
     }
     
-    pub fn interpret(&self, expr: Expr) -> Result<Literal, &'static str> {
-        match self.evaluate(&expr) {
-            Ok(literal) => Ok(literal),
-            Err(message) => {
-                runtime_error(message);
-                Err(message)
-            }
-        }
+    pub fn interpret(&self, expr: Expr) -> Result<Literal, RuntimeError> {
+        self.evaluate(&expr)
     }
 }
