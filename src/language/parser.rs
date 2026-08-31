@@ -1,7 +1,7 @@
 use crate::language::expr::Expr;
 use crate::language::token::{Literal, Token};
 use crate::language::token_type::TokenType;
-use crate::util::errors::serror;
+use crate::util::errors::parse_error;
 
 #[derive(Debug, Default)]
 pub(crate) struct Parser {
@@ -55,7 +55,7 @@ impl Parser {
     }
 
     fn report(token: &Token, message: &'static str) {
-        serror(token.line, &token.lexeme, message)
+        parse_error(token.line, &token.lexeme, message)
     }
 
     fn consume(&mut self, kind: TokenType, message: &'static str) -> Result<&Token, &'static str> {

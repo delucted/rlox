@@ -1,6 +1,6 @@
 use crate::language::token::{Literal, Token};
 use crate::language::token_type::TokenType;
-use crate::util::errors::error;
+use crate::util::errors::lexer_error;
 
 fn get_by_keyword(keyword: &str) -> Option<TokenType> {
     match keyword {
@@ -102,7 +102,7 @@ impl Lexer {
         while self.peek() != '"' && !self.end() {
             let c = match self.advance() {
                 None => {
-                    error(self.line, &self.line_preview(self.start), "unterminated string");
+                    lexer_error(self.line, &self.line_preview(self.start), "unterminated string");
                     self.had_error = true;
                     return
                 }
@@ -116,7 +116,7 @@ impl Lexer {
 
         if self.end() {
             let line = self.line_preview(self.start);
-            error(self.line, &line, "unterminated string");
+            lexer_error(self.line, &line, "unterminated string");
             self.had_error = true;
         }
 
@@ -241,7 +241,7 @@ impl Lexer {
                     return;
                 }
                 let line = self.line_preview(self.start);
-                error(self.line, &line, &format!("unexpected character \"{c}\""));
+                lexer_error(self.line, &line, &format!("unexpected character \"{c}\""));
                 self.had_error = true;
             }
         }
