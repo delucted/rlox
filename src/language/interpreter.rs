@@ -1,10 +1,13 @@
+use crate::language::environment::Environment;
 use crate::language::expr::Expr;
+use crate::language::stmt::Stmt;
 use crate::language::token::{Literal, Token};
 use crate::language::token_type::TokenType;
 use crate::util::errors::RuntimeError;
 
+#[derive(Default)]
 pub struct Interpreter {
-
+    pub environment: Environment
 }
 
 impl Interpreter {
@@ -112,10 +115,39 @@ impl Interpreter {
                     })
                 }
             }
+            
+            Expr::Variable { name } => self.environment.get(name)?
         })
     }
+
+    fn execute(&mut self, stmt: Stmt) -> Result<(), RuntimeError> {
+        match stmt {
+            
+            Stmt::Expression(expr) => { self.evaluate(&expr)?; return Ok(()) },
+            
+            Stmt::Print(expr) => {
+                let value = self.evaluate(&expr)?;
+                println!("{value}");
+            }
+            
+            Stmt::Var { name, initializer } => {
+                let value = match initializer {
+                    Some(expr) => self.evaluate(&expr)?,
+                    None => Literal::Nil
+                };
+                
+                self.environment.define(name.lexeme, value);
+                
+            }
+        }
+
+        Ok(())
+    }
     
-    pub fn interpret(&self, expr: Expr) -> Result<Literal, RuntimeError> {
-        self.evaluate(&expr)
+    pub fn interpret(&mut self, statements: Vec<Stmt>) -> Result<(), RuntimeError> {
+        for stmt in statements {
+            self.execute(stmt)?;
+        }
+        Ok(())
     }
 }

@@ -6,6 +6,7 @@ pub enum Expr {
     Grouping { expression: Box<Expr> },
     Literal { value: Literal },
     Unary { operator: Token, right: Box<Expr> },
+    Variable { name: Token }
     //Stmt { expression: Box<Expr> },
     //Print { expr: Box<Expr> } // TODO: convert to standard lib function
 }

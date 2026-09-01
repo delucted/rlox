@@ -1,4 +1,5 @@
 use crate::language::expr::Expr;
+use crate::language::stmt::Stmt;
 use crate::language::token::{Literal, Token};
 use crate::language::token_type::TokenType;
 use crate::util::errors::ParseError;
@@ -55,16 +56,15 @@ impl Parser {
         false
     }
 
-    fn consume(&mut self, kind: TokenType, message: &'static str) {
+    fn consume(&mut self, kind: TokenType, message: &'static str) -> Option<Token> {
         if self.check(kind) {
-            self.advance();
-            return
+            return Some(self.advance().clone())
         }
-
         self.errors.push(ParseError {
             token: self.peek().clone(),
             message: String::from(message)
-        })
+        });
+        None
     }
 
     fn primary(&mut self) -> Option<Expr> {
@@ -79,6 +79,9 @@ impl Parser {
         }
         if self.match_next(&[TokenType::Number, TokenType::String]) {
             return Some(Expr::Literal {value: self.previous().literal.as_ref().cloned().unwrap()})
+        }
+        if self.match_next(&[TokenType::Identifier]) {
+            return Some(Expr::Variable { name: self.previous().clone() })
         }
         if self.match_next(&[TokenType::LeftParen]) {
             let expr = self.expression();
@@ -167,6 +170,7 @@ impl Parser {
         self.equality()
     }
 
+    #[allow(dead_code)]
     fn synchronize(&mut self) {
         self.advance();
 
@@ -191,10 +195,63 @@ impl Parser {
         }
     }
 
-    pub fn parse(mut self) -> Result<Expr, Vec<ParseError>> {
-        if self.errors.is_empty() {
-            return Ok(self.expression())
+    fn print_statement(&mut self) -> Stmt {
+        let value = self.expression();
+        self.consume(TokenType::Semicolon, "semicolon expected after value");
+        Stmt::Print(value)
+    }
+
+    fn expression_statement(&mut self) -> Stmt {
+        let expr = self.expression();
+        self.consume(TokenType::Semicolon, "semicolon expected after value");
+        Stmt::Expression(expr)
+    }
+
+    fn statement(&mut self) -> Stmt {
+        if self.match_next(&[TokenType::Print]) {
+            return self.print_statement();
         }
-        Err(self.errors)
+        self.expression_statement()
+    }
+
+    fn var_declaration(&mut self) -> Option<Stmt> {
+        let name = self.consume(
+            TokenType::Identifier,
+            "expected identifier"
+        )?;
+
+        let initializer: Option<Expr> = if self.match_next(&[TokenType::Equal]) {
+             Some(self.expression())
+        } else { None };
+
+        self.consume(
+            TokenType::Semicolon,
+            "semicolon expected after variable declaration"
+        )?;
+        
+        Some(Stmt::Var { name, initializer })
+    }
+
+    fn declaration(&mut self) -> Option<Stmt> {
+        if self.match_next(&[TokenType::Var]) {
+            return self.var_declaration()
+        }
+        Some(self.statement())
+    }
+
+    pub fn parse(mut self) -> Result<Vec<Stmt>, Vec<ParseError>> {
+        let mut statements: Vec<Stmt> = Vec::new();
+
+        while !self.end() {
+            match self.declaration() {
+                Some(stmt) => statements.push(stmt),
+                None => return Err(self.errors)
+            }
+        }
+
+        if !self.errors.is_empty() {
+            return Err(self.errors)
+        }
+        Ok(statements)
     }
 }

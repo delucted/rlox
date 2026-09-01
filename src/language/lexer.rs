@@ -1,6 +1,6 @@
 use crate::language::token::{Literal, Token};
 use crate::language::token_type::TokenType;
-use crate::util::errors::{LoxError, LexError};
+use crate::util::errors::LexError;
 
 fn get_by_keyword(keyword: &str) -> Option<TokenType> {
     match keyword {
@@ -105,7 +105,6 @@ impl Lexer {
         }
 
         if self.end() {
-            let line = self.line_preview(self.start);
             self.errors.push(LexError {
                 line: self.line,
                 preview: self.line_preview(self.current - 1),
@@ -230,7 +229,6 @@ impl Lexer {
                     self.identifier();
                     return;
                 }
-                let line = self.line_preview(self.start);
                 self.errors.push(LexError {
                     line: self.line,
                     preview: self.line_preview(self.current),

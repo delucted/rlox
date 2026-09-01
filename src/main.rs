@@ -6,7 +6,6 @@ pub mod language;
 pub mod util;
 
 use std::env;
-use std::error::Error;
 use std::fs;
 use std::io::{self, Write};
 use std::process::ExitCode;
@@ -15,15 +14,15 @@ use crate::language::interpreter::Interpreter;
 use crate::language::parser::Parser;
 use crate::util::errors::LoxError;
 
-fn run(source: String, interpreter: &Interpreter) -> Result<(), LoxError> {
+fn run(source: String, interpreter: &mut Interpreter) -> Result<(), LoxError> {
     let tokens = Lexer::new(source).scan_tokens()?;
-    let expression = Parser::new(tokens).parse()?;
-    let value = interpreter.interpret(expression)?;
-    println!("{value:?}");
+    let statements = Parser::new(tokens).parse()?;
+    interpreter.interpret(statements)?;
+
     Ok(())
 }
 
-fn run_repl(interpreter: &Interpreter) {
+fn run_repl(interpreter: &mut Interpreter) {
     println!("rlox REPL - Welcome.");
     loop {
         print!("> ");
@@ -45,7 +44,7 @@ fn run_repl(interpreter: &Interpreter) {
     }
 }
 
-fn run_file(path: &str, interpreter: &Interpreter) -> ExitCode {
+fn run_file(path: &str, interpreter: &mut Interpreter) -> ExitCode {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -63,12 +62,12 @@ fn run_file(path: &str, interpreter: &Interpreter) -> ExitCode {
 }
 
 fn main() -> ExitCode {
-    let interpreter = Interpreter {};
+    let mut interpreter = Interpreter::default();
     let args: Vec<String> = env::args().collect();
 
     match args.len() {
-        1 => { run_repl(&interpreter); return ExitCode::SUCCESS } ,
-        2 => { return run_file(&args[1], &interpreter) },
+        1 => { run_repl(&mut interpreter); return ExitCode::SUCCESS } ,
+        2 => { return run_file(&args[1], &mut interpreter) },
         _ => { eprintln!("Usages:\n\trlox\n\trlox [file]"); ExitCode::SUCCESS }
     }
 }
