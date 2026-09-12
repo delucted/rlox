@@ -1,1 +1,7 @@
+// Test variable declaration, access, and control statements
+
 var myVariable = "Welcome to rlox!";
+if (myVariable == "Welcome to rlox")
+    print "YES";
+else
+    print "NO";

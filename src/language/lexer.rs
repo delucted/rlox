@@ -4,6 +4,9 @@ use crate::util::errors::LexError;
 
 fn get_by_keyword(keyword: &str) -> Option<TokenType> {
     match keyword {
+        "and" => Some(TokenType::And),
+        "class" => Some(TokenType::Class),
+        "else" => Some(TokenType::Else),
         "false" => Some(TokenType::False),
         "for" => Some(TokenType::For),
         "fun" => Some(TokenType::Fun),

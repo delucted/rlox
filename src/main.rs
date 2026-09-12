@@ -62,12 +62,12 @@ fn run_file(path: &str, interpreter: &mut Interpreter) -> ExitCode {
 }
 
 fn main() -> ExitCode {
-    let mut interpreter = Interpreter::default();
+    let mut interpreter = Interpreter::new();
     let args: Vec<String> = env::args().collect();
 
     match args.len() {
         1 => { run_repl(&mut interpreter); return ExitCode::SUCCESS } ,
-        2 => { return run_file(&args[1], &mut interpreter) },
+        2 => { run_file(&args[1], &mut interpreter) },
         _ => { eprintln!("Usages:\n\trlox\n\trlox [file]"); ExitCode::SUCCESS }
     }
 }
