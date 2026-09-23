@@ -15,6 +15,12 @@ pub struct ParseError {
 }
 
 #[derive(Debug)]
+pub struct ResolveError {
+    pub token: Token,
+    pub message: String
+}
+
+#[derive(Debug)]
 pub struct RuntimeError {
     pub token: Token,
     pub message: String
@@ -24,6 +30,7 @@ pub struct RuntimeError {
 pub enum LoxError {
     Lex(Vec<LexError>),
     Parse(Vec<ParseError>),
+    Resolve(Vec<ResolveError>),
     Runtime(RuntimeError)
 }
 
@@ -36,6 +43,13 @@ impl fmt::Display for RuntimeError {
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Parse Error: {}\n\t{} | {}", self.message, self.token.line, self.token.lexeme)
+    }
+}
+
+impl fmt::Display for ResolveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Resolve Error: {}
+	{} | {}", self.message, self.token.line, self.token.lexeme)
     }
 }
 
@@ -62,6 +76,13 @@ impl fmt::Display for LoxError {
                 }
                 write!(f, "{o}")
             }
+            Self::Resolve(errors) => {
+                let mut o = String::new();
+                for error in errors {
+                    o.push_str(&error.to_string());
+                }
+                write!(f, "{o}")
+            }
             Self::Runtime(error) => {
                 write!(f, "{error}")
             }
@@ -74,6 +95,7 @@ impl LoxError {
         match self {
             Self::Lex(_)     => 65,
             Self::Parse(_)   => 65,
+            Self::Resolve(_) => 65,
             Self::Runtime(_) => 70
         }
     }
@@ -88,6 +110,12 @@ impl From<Vec<LexError>> for LoxError {
 impl From<Vec<ParseError>> for LoxError {
     fn from(value: Vec<ParseError>) -> Self {
         LoxError::Parse(value)
+    }
+}
+
+impl From<Vec<ResolveError>> for LoxError {
+    fn from(value: Vec<ResolveError>) -> Self {
+        LoxError::Resolve(value)
     }
 }
 

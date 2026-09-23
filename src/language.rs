@@ -8,3 +8,5 @@ pub mod stmt;
 pub mod environment;
 pub mod callable;
 pub mod std;
+pub mod resolver;
+pub mod class;

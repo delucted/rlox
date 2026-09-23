@@ -1,5 +1,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::collections::HashMap;
+use crate::language::callable::LoxFunction;
+use crate::language::class::LoxClass;
 use crate::language::environment::Environment;
 use crate::language::expr::Expr;
 use crate::language::stmt::Stmt;
@@ -8,16 +11,28 @@ use crate::language::token_type::TokenType;
 use crate::util::errors::RuntimeError;
 use crate::language::std::clock::Clock;
 
+#[derive(Debug)]
+pub enum ExecSignal {
+    Runtime(RuntimeError),
+    Return { keyword: Token, value: Literal },
+}
+
+impl From<RuntimeError> for ExecSignal {
+    fn from(error: RuntimeError) -> Self {
+        Self::Runtime(error)
+    }
+}
+
 pub struct Interpreter {
     pub globals: Rc<RefCell<Environment>>,
-    environment: Rc<RefCell<Environment>>
+    environment: Rc<RefCell<Environment>>,
+    locals: HashMap<usize, usize>
 }
 
 impl Interpreter {
     pub fn new() -> Self {
         let globals = Rc::new(RefCell::new(Environment::new()));
 
-        // Native functions are just globals holding a Callable value.
         globals.borrow_mut().define(
             String::from("clock"),
             Literal::Callable(Rc::new(Clock))
@@ -25,10 +40,28 @@ impl Interpreter {
 
         Self {
             environment: Rc::clone(&globals),
-            globals
+            globals,
+            locals: HashMap::new()
         }
     }
-    
+
+    pub fn resolve(&mut self, id: usize, depth: usize) {
+        self.locals.insert(id, depth);
+    }
+
+    fn look_up_variable(
+        &self,
+        name: &Token,
+        id: usize
+    ) -> Result<Literal, RuntimeError> {
+        match self.locals.get(&id) {
+            Some(distance) => Ok(
+                Environment::get_at(&self.environment, *distance, &name.lexeme)
+            ),
+            None => self.globals.borrow().get(name)
+        }
+    }
+
     fn is_truthy(literal: Literal) -> bool {
         match literal {
             Literal::Boolean(b) => b.clone(),
@@ -93,10 +126,8 @@ impl Interpreter {
                     ),
                     TokenType::Plus => {
                         match (left_eval, right_eval) {
-                            // Number addition
                             (Literal::Number(l),
                                 Literal::Number(r)) => Literal::Number(l + r),
-                            // String concatenation
                             (Literal::String(mut l),
                                 Literal::String(r)) => {
                                 l.push_str(&r);
@@ -141,11 +172,18 @@ impl Interpreter {
                 }
             }
 
-            Expr::Variable { name } => self.environment.borrow().get(&name)?,
+            Expr::Variable { id, name } => self.look_up_variable(&name, id)?,
 
-            Expr::Assign { name, value } => {
+            Expr::Assign { id, name, value } => {
                 let value = self.evaluate(*value)?;
-                self.environment.borrow_mut().assign(name.clone(), &value)?;
+
+                match self.locals.get(&id) {
+                    Some(distance) => Environment::assign_at(
+                        &self.environment, *distance, &name, value.clone()
+                    ),
+                    None => { self.globals.borrow_mut().assign(name, &value)?; }
+                }
+
                 value
             }
 
@@ -166,7 +204,6 @@ impl Interpreter {
             }
 
             Expr::Call { callee, paren, arguments } => {
-                // Evaluate the callee first, then the arguments left-to-right.
                 let callee_value = self.evaluate(*callee)?;
 
                 let mut args: Vec<Literal> = Vec::with_capacity(arguments.len());
@@ -174,8 +211,6 @@ impl Interpreter {
                     args.push(self.evaluate(*argument)?);
                 }
 
-                // Rust has no `instanceof`: "is it callable?" is just a match on the
-                // value variant, which hands us the function in the same step.
                 let function = match callee_value {
                     Literal::Callable(f) => f,
                     _ => return Err(RuntimeError {
@@ -200,12 +235,18 @@ impl Interpreter {
         })
     }
 
-    fn execute_block(&mut self, statements: Vec<Stmt>) -> Result<(), RuntimeError> {
+    pub(crate) fn execute_block(
+        &mut self,
+        statements: Vec<Stmt>,
+        environment: Option<Rc<RefCell<Environment>>>,
+    ) -> Result<(), ExecSignal> {
         let previous = Rc::clone(&self.environment);
 
-        self.environment = Rc::new(RefCell::new(
-            Environment::from_parent(Rc::clone(&previous)),
-        ));
+        self.environment = environment.unwrap_or_else(|| {
+            Rc::new(RefCell::new(
+                Environment::from_parent(Rc::clone(&previous)),
+            ))
+        });
 
         let result = (|| {
             for statement in statements {
@@ -218,7 +259,7 @@ impl Interpreter {
         result
     }
 
-    fn execute(&mut self, stmt: Stmt) -> Result<(), RuntimeError> {
+    fn execute(&mut self, stmt: Stmt) -> Result<(), ExecSignal> {
         match stmt {
 
             Stmt::Expression(expr) => { self.evaluate(expr)?; return Ok(()) },
@@ -237,9 +278,9 @@ impl Interpreter {
                 self.environment.borrow_mut().define(name.lexeme, value);
 
             }
-            
+
             Stmt::Block(statements) => {
-                self.execute_block(statements)?;
+                self.execute_block(statements, None)?;
             }
 
             Stmt::If { condition, then_branch, else_branch } => {
@@ -260,14 +301,51 @@ impl Interpreter {
                     self.execute(*body.clone())?;
                 }
             }
+
+            Stmt::Function { name, params, body } => {
+                let function_name = name.lexeme.clone();
+
+                let function = LoxFunction {
+                    closure: Rc::clone(&self.environment),
+                    declaration: Stmt::Function { name, params, body },
+                };
+
+                self.environment.borrow_mut().define(
+                    function_name,
+                    Literal::Callable(Rc::new(function)),
+                );
+            }
+
+            Stmt::Return { keyword, value } => {
+                let value = self.evaluate(value)?;
+                return Err(ExecSignal::Return { keyword, value })
+            }
+
+            Stmt::Class { name, .. } => {
+                self.environment.borrow_mut().define(name.lexeme.clone(), Literal::Nil);
+
+                let class = LoxClass { name: name.lexeme.clone() };
+
+                self.environment.borrow_mut().assign(
+                    name,
+                    &Literal::Class(Rc::new(class))
+                )?;
+            }
         }
 
         Ok(())
     }
-    
+
     pub fn interpret(&mut self, statements: Vec<Stmt>) -> Result<(), RuntimeError> {
         for stmt in statements {
-            self.execute(stmt)?;
+            match self.execute(stmt) {
+                Ok(()) => {}
+                Err(ExecSignal::Runtime(error)) => return Err(error),
+                Err(ExecSignal::Return { keyword, .. }) => return Err(RuntimeError {
+                    token: keyword,
+                    message: String::from("can't return from top-level code")
+                })
+            }
         }
         Ok(())
     }

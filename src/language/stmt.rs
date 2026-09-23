@@ -10,10 +10,17 @@ pub enum Stmt {
         initializer: Option<Expr>
     },
     Block(Vec<Stmt>),
+    Class { name: Token, methods: Vec<Stmt> },
+    Function {
+        name: Token,
+        params: Vec<Token>,
+        body: Vec<Box<Stmt>>
+    },
     If {
         condition: Expr,
         then_branch: Box<Stmt>,
         else_branch: Box<Option<Stmt>>
     },
-    While { condition: Option<Expr>, body: Box<Stmt> }
+    While { condition: Option<Expr>, body: Box<Stmt> },
+    Return { keyword: Token, value: Expr }
 }

@@ -45,6 +45,50 @@ impl Environment {
         self.values.insert(name, value); // can define already defined variables
     }
 
+    pub fn ancestor(
+        environment: &Rc<RefCell<Environment>>,
+        distance: usize,
+    ) -> Rc<RefCell<Environment>> {
+        let mut environment = Rc::clone(environment);
+
+        for _ in 0..distance {
+            let parent = environment
+                .borrow()
+                .enclosing
+                .as_ref()
+                .map(Rc::clone)
+                .expect("resolver promised an enclosing environment at this distance");
+            environment = parent;
+        }
+
+        environment
+    }
+
+    pub fn get_at(
+        environment: &Rc<RefCell<Environment>>,
+        distance: usize,
+        name: &str,
+    ) -> Literal {
+        Environment::ancestor(environment, distance)
+            .borrow()
+            .values
+            .get(name)
+            .cloned()
+            .expect("resolver promised this variable exists at this distance")
+    }
+
+    pub fn assign_at(
+        environment: &Rc<RefCell<Environment>>,
+        distance: usize,
+        name: &Token,
+        value: Literal,
+    ) {
+        Environment::ancestor(environment, distance)
+            .borrow_mut()
+            .values
+            .insert(name.lexeme.clone(), value);
+    }
+
     pub fn assign(&mut self, name: Token, value: &Literal) -> Result<(), RuntimeError> {
         if self.values.contains_key(&name.lexeme) {
             self.values.insert(name.lexeme, value.clone());

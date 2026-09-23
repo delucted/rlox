@@ -12,11 +12,13 @@ use std::process::ExitCode;
 use language::lexer::Lexer;
 use crate::language::interpreter::Interpreter;
 use crate::language::parser::Parser;
+use crate::language::resolver::Resolver;
 use crate::util::errors::LoxError;
 
 fn run(source: String, interpreter: &mut Interpreter) -> Result<(), LoxError> {
     let tokens = Lexer::new(source).scan_tokens()?;
     let statements = Parser::new(tokens).parse()?;
+    Resolver::new(interpreter).resolve(&statements)?;
     interpreter.interpret(statements)?;
 
     Ok(())

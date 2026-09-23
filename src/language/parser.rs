@@ -3,6 +3,14 @@ use crate::language::stmt::Stmt;
 use crate::language::token::{Literal, Token};
 use crate::language::token_type::TokenType;
 use crate::util::errors::ParseError;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use crate::language::stmt::Stmt::Print;
+
+static NEXT_EXPR_ID: AtomicUsize = AtomicUsize::new(0);
+
+fn next_expr_id() -> usize {
+    NEXT_EXPR_ID.fetch_add(1, Ordering::Relaxed)
+}
 
 #[derive(Debug, Default)]
 pub(crate) struct Parser {
@@ -56,7 +64,7 @@ impl Parser {
         false
     }
 
-    fn consume(&mut self, kind: TokenType, message: &'static str) -> Option<Token> {
+    fn consume(&mut self, kind: TokenType, message: &str) -> Option<Token> {
         if self.check(kind) {
             return Some(self.advance().clone())
         }
@@ -83,7 +91,7 @@ impl Parser {
             ))
         }
         if self.match_next(&[TokenType::Identifier]) {
-            return Ok(Some(Expr::Variable { name: self.previous().clone() }))
+            return Ok(Some(Expr::Variable { id: next_expr_id(), name: self.previous().clone() }))
         }
         if self.match_next(&[TokenType::LeftParen]) {
             let expr = self.expression()?;
@@ -259,8 +267,8 @@ impl Parser {
             let value = self.assignment()?;
             
             match expr {
-                Expr::Variable { name } =>
-                    return Ok(Expr::Assign { name, value: Box::from(value) }),
+                Expr::Variable { name, .. } =>
+                    return Ok(Expr::Assign { id: next_expr_id(), name, value: Box::from(value) }),
                 _=>{}
             };
             
@@ -343,12 +351,28 @@ impl Parser {
         })
     }
 
+    fn return_statement(&mut self) -> Result<Stmt, ParseError> {
+        let keyword = self.previous().clone();
+        let mut value = Expr::Literal { value: Literal::Nil };
+
+        if !self.check(TokenType::Semicolon) {
+            value = self.expression()?;
+        }
+
+        self.consume(TokenType::Semicolon, "expect ';' after return value");
+        Ok(Stmt::Return {
+            keyword: keyword.clone(), value
+        })
+    }
     fn statement(&mut self) -> Result<Stmt, ParseError> {
         if self.match_next(&[TokenType::If]) {
             return self.if_statement();
         }
         if self.match_next(&[TokenType::Print]) {
             return self.print_statement();
+        }
+        if self.match_next(&[TokenType::Return]) {
+            return self.return_statement();
         }
         if self.match_next(&[TokenType::LeftBrace]) {
             return Ok(Stmt::Block(self.block()))
@@ -420,9 +444,85 @@ impl Parser {
         Ok(Stmt::Var { name: name.unwrap(), initializer })
     }
 
+    fn function(&mut self, kind: &'static str) -> Result<Stmt, ParseError> {
+        let name = self.consume(
+            TokenType::Identifier,
+            &format!("expected {} name", kind)
+        );
+        if let None = name {
+            return Err(ParseError {
+                token: self.peek().clone(),
+                message: format!("expected {} name", kind)
+            })
+        }
+        self.consume(
+            TokenType::LeftParen,
+            &format!("expected '(' after {} identifier", kind)
+        );
+        let mut parameters: Vec<Token> = Vec::new();
+        if !self.check(TokenType::RightParen) {
+            loop {
+                if parameters.len() >= 255 {
+                    self.errors.push(ParseError {
+                        token: self.peek().clone(),
+                        message: String::from("255 parameter limit exceeded")
+                    })
+                }
+                if let Some(t) = self.consume(
+                    TokenType::Identifier,
+                    "parameter name expected"
+                ) {
+                    parameters.push(t);
+                }
+                if !self.match_next(&[TokenType::Comma]) {
+                    break
+                }
+            }
+        }
+        self.consume(TokenType::RightParen, "expected ')' after parameters");
+
+        self.consume(
+            TokenType::LeftBrace,
+            &format!("expect '{{' before {} body", kind)
+        );
+        let body: Vec<Stmt> = self.block();
+        let mut body_stmts: Vec<Box<Stmt>> = Vec::new();
+        for stmt in body {
+            body_stmts.push(Box::from(stmt));
+        }
+        Ok(Stmt::Function {
+            name: name.unwrap(), params: parameters, body: body_stmts
+        })
+    }
+
+    fn class_declaration(&mut self) -> Result<Stmt, ParseError> {
+        let name = self.consume(
+            TokenType::Identifier,
+            "expect class name"
+        ).unwrap();
+        self.consume(TokenType::LeftBrace, "expect '{' before class body");
+
+        let mut methods: Vec<Stmt> = Vec::new();
+        while (!self.check(TokenType::RightBrace) && !self.end()) {
+            methods.push(self.function("method")?);
+        }
+
+        self.consume(TokenType::RightBrace, "expect '}' after class body");
+
+        Ok(Stmt::Class {
+            name, methods
+        })
+    }
+
     fn declaration(&mut self) -> Result<Stmt, ParseError> {
         if self.match_next(&[TokenType::Var]) {
             return self.var_declaration()
+        }
+        if self.match_next(&[TokenType::Class]) {
+            return self.class_declaration()
+        }
+        if self.match_next(&[TokenType::Fun]) {
+            return self.function("function")
         }
         self.statement()
     }
