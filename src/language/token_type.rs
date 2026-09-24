@@ -4,7 +4,8 @@ pub enum TokenType {
     LeftParen, RightParen, LeftBrace,
     RightBrace, Comma, Dot,
     Minus, Plus, Semicolon,
-    Slash, Star,
+    Slash, Star, LeftBracket,
+    RightBracket,
 
     // One or two character tokens.
     Bang, BangEqual, Equal,

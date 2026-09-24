@@ -4,7 +4,6 @@ use crate::language::token::{Literal, Token};
 use crate::language::token_type::TokenType;
 use crate::util::errors::ParseError;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use crate::language::stmt::Stmt::Print;
 
 static NEXT_EXPR_ID: AtomicUsize = AtomicUsize::new(0);
 
@@ -90,6 +89,20 @@ impl Parser {
                 Expr::Literal {value: self.previous().literal.as_ref().cloned().unwrap()}
             ))
         }
+        if self.match_next(&[TokenType::This]) {
+            return Ok(Some(Expr::This { id: next_expr_id(), keyword: self.previous().clone() }))
+        }
+        if self.match_next(&[TokenType::Super]) {
+            let keyword = self.previous().clone();
+            self.consume(TokenType::Dot, "expect '.' after 'super'");
+
+            let Some(method) = self.consume(
+                TokenType::Identifier,
+                "expect superclass method name"
+            ) else { return Ok(None) };
+
+            return Ok(Some(Expr::Super { id: next_expr_id(), keyword, method }))
+        }
         if self.match_next(&[TokenType::Identifier]) {
             return Ok(Some(Expr::Variable { id: next_expr_id(), name: self.previous().clone() }))
         }
@@ -152,6 +165,15 @@ impl Parser {
         loop {
             if self.match_next(&[TokenType::LeftParen]) {
                 expr = Some(self.finish_call(expr.unwrap())?);
+            } else if self.match_next(&[TokenType::Dot]) {
+                let Some(name) = self.consume(
+                    TokenType::Identifier,
+                    "expect property name after '.'"
+                ) else { break };
+
+                expr = Some(Expr::Get {
+                    object: Box::from(expr.take().unwrap()), name
+                });
             } else {
                 break;
             }
@@ -269,6 +291,8 @@ impl Parser {
             match expr {
                 Expr::Variable { name, .. } =>
                     return Ok(Expr::Assign { id: next_expr_id(), name, value: Box::from(value) }),
+                Expr::Get { object, name } =>
+                    return Ok(Expr::Set { object, name, value: Box::from(value) }),
                 _=>{}
             };
             
@@ -353,10 +377,10 @@ impl Parser {
 
     fn return_statement(&mut self) -> Result<Stmt, ParseError> {
         let keyword = self.previous().clone();
-        let mut value = Expr::Literal { value: Literal::Nil };
+        let mut value: Option<Expr> = None;
 
         if !self.check(TokenType::Semicolon) {
-            value = self.expression()?;
+            value = Some(self.expression()?);
         }
 
         self.consume(TokenType::Semicolon, "expect ';' after return value");
@@ -500,6 +524,18 @@ impl Parser {
             TokenType::Identifier,
             "expect class name"
         ).unwrap();
+        let mut superclass: Option<Expr> = None;
+        if self.match_next(&[TokenType::Less]) {
+            if let Some(superclass_name) = self.consume(
+                TokenType::Identifier,
+                "expect superclass name"
+            ) {
+                superclass = Some(Expr::Variable {
+                    id: next_expr_id(), name: superclass_name
+                });
+            }
+        }
+
         self.consume(TokenType::LeftBrace, "expect '{' before class body");
 
         let mut methods: Vec<Stmt> = Vec::new();
@@ -510,7 +546,7 @@ impl Parser {
         self.consume(TokenType::RightBrace, "expect '}' after class body");
 
         Ok(Stmt::Class {
-            name, methods
+            name, superclass, methods
         })
     }
 

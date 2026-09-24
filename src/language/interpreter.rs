@@ -1,8 +1,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::collections::HashMap;
-use crate::language::callable::LoxFunction;
-use crate::language::class::LoxClass;
+use crate::language::callable::{Callable, LoxFunction};
+use crate::language::class::{LoxClass, LoxInstance};
 use crate::language::environment::Environment;
 use crate::language::expr::Expr;
 use crate::language::stmt::Stmt;
@@ -187,6 +187,56 @@ impl Interpreter {
                 value
             }
 
+            Expr::Get { object, name } => {
+                let Literal::Instance(instance) = self.evaluate(*object)? else {
+                    return Err(RuntimeError {
+                        token: name,
+                        message: String::from("only instances have properties")
+                    })
+                };
+
+                LoxInstance::get(&instance, &name)?
+            }
+
+            Expr::Set { object, name, value } => {
+                let Literal::Instance(instance) = self.evaluate(*object)? else {
+                    return Err(RuntimeError {
+                        token: name,
+                        message: String::from("only instances have fields")
+                    })
+                };
+
+                let value = self.evaluate(*value)?;
+                LoxInstance::set(&instance, &name, value.clone());
+                value
+            }
+
+            Expr::This { id, keyword } => self.look_up_variable(&keyword, id)?,
+
+            Expr::Super { id, keyword: _, method } => {
+                let distance = *self.locals
+                    .get(&id)
+                    .expect("resolver promised super is resolved");
+
+                let Literal::Class(superclass) =
+                    Environment::get_at(&self.environment, distance, "super") else {
+                    unreachable!("super must be bound to a class");
+                };
+
+                let Literal::Instance(object) =
+                    Environment::get_at(&self.environment, distance - 1, "this") else {
+                    unreachable!("this must be bound to an instance");
+                };
+
+                match superclass.find_method(&method.lexeme) {
+                    Some(found) => Literal::Callable(Rc::new(found.bind(object))),
+                    None => return Err(RuntimeError {
+                        message: format!("undefined property \"{}\"", method.lexeme),
+                        token: method
+                    })
+                }
+            }
+
             Expr::Logical { left, operator, right} => {
                 let eval = self.evaluate(*left)?;
 
@@ -211,8 +261,9 @@ impl Interpreter {
                     args.push(self.evaluate(*argument)?);
                 }
 
-                let function = match callee_value {
+                let function: Rc<dyn Callable> = match callee_value {
                     Literal::Callable(f) => f,
+                    Literal::Class(klass) => klass,
                     _ => return Err(RuntimeError {
                         token: paren,
                         message: String::from("only able to call functions and classes")
@@ -308,6 +359,7 @@ impl Interpreter {
                 let function = LoxFunction {
                     closure: Rc::clone(&self.environment),
                     declaration: Stmt::Function { name, params, body },
+                    is_initializer: false,
                 };
 
                 self.environment.borrow_mut().define(
@@ -317,18 +369,74 @@ impl Interpreter {
             }
 
             Stmt::Return { keyword, value } => {
-                let value = self.evaluate(value)?;
+                let value = match value {
+                    Some(expr) => self.evaluate(expr)?,
+                    None => Literal::Nil
+                };
                 return Err(ExecSignal::Return { keyword, value })
             }
 
-            Stmt::Class { name, .. } => {
+            Stmt::Class { name, superclass, methods } => {
+                let superclass_value = match &superclass {
+                    Some(expr) => {
+                        let Expr::Variable { name: superclass_name, .. } = expr else {
+                            unreachable!("superclass must be a variable expression");
+                        };
+
+                        let Literal::Class(klass) = self.evaluate(expr.clone())? else {
+                            return Err(RuntimeError {
+                                token: superclass_name.clone(),
+                                message: String::from("superclass must be a class")
+                            }.into())
+                        };
+
+                        Some(klass)
+                    }
+                    None => None
+                };
+
                 self.environment.borrow_mut().define(name.lexeme.clone(), Literal::Nil);
 
-                let class = LoxClass { name: name.lexeme.clone() };
+                let previous = Rc::clone(&self.environment);
+                if let Some(klass) = &superclass_value {
+                    self.environment = Rc::new(RefCell::new(
+                        Environment::from_parent(Rc::clone(&previous))
+                    ));
+                    self.environment.borrow_mut().define(
+                        String::from("super"),
+                        Literal::Class(Rc::clone(klass))
+                    );
+                }
+
+                let mut class_methods: HashMap<String, Rc<LoxFunction>> = HashMap::new();
+                for method in methods {
+                    let Stmt::Function { name: method_name, .. } = &method else {
+                        unreachable!("class body must contain only methods");
+                    };
+
+                    let key = method_name.lexeme.clone();
+                    let is_initializer = key == "init";
+
+                    class_methods.insert(key, Rc::new(LoxFunction {
+                        closure: Rc::clone(&self.environment),
+                        declaration: method.clone(),
+                        is_initializer
+                    }));
+                }
+
+                let klass = LoxClass {
+                    name: name.lexeme.clone(),
+                    superclass: superclass_value,
+                    methods: class_methods
+                };
+
+                if superclass.is_some() {
+                    self.environment = previous;
+                }
 
                 self.environment.borrow_mut().assign(
                     name,
-                    &Literal::Class(Rc::new(class))
+                    &Literal::Class(Rc::new(klass))
                 )?;
             }
         }

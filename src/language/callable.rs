@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use crate::language::class::LoxInstance;
 use crate::language::interpreter::{ExecSignal, Interpreter};
 use crate::language::token::Literal;
 use std::fmt;
@@ -11,7 +12,7 @@ pub trait Callable: fmt::Debug + fmt::Display {
     fn arity(&self) -> usize;
 
     fn call(
-        &self,
+        self: Rc<Self>,
         interpreter: &mut Interpreter,
         arguments: Vec<Literal>,
     ) -> Result<Literal, RuntimeError>;
@@ -21,6 +22,20 @@ pub trait Callable: fmt::Debug + fmt::Display {
 pub struct LoxFunction {
     pub closure: Rc<RefCell<Environment>>,
     pub declaration: Stmt,
+    pub is_initializer: bool,
+}
+
+impl LoxFunction {
+    pub fn bind(&self, instance: Rc<RefCell<LoxInstance>>) -> LoxFunction {
+        let mut environment = Environment::from_parent(Rc::clone(&self.closure));
+        environment.define(String::from("this"), Literal::Instance(instance));
+
+        LoxFunction {
+            closure: Rc::new(RefCell::new(environment)),
+            declaration: self.declaration.clone(),
+            is_initializer: self.is_initializer,
+        }
+    }
 }
 
 impl Callable for LoxFunction {
@@ -33,7 +48,7 @@ impl Callable for LoxFunction {
     }
 
     fn call(
-        &self,
+        self: Rc<Self>,
         interpreter: &mut Interpreter,
         arguments: Vec<Literal>,
     ) -> Result<Literal, RuntimeError> {
@@ -48,13 +63,25 @@ impl Callable for LoxFunction {
             environment.define(param.lexeme.clone(), argument);
         }
 
-        match interpreter.execute_block(
+        let result = interpreter.execute_block(
             body.iter().map(|stmt| stmt.as_ref().clone()).collect(),
             Some(Rc::new(RefCell::new(environment))),
-        ) {
-            Ok(()) => Ok(Literal::Nil),
+        );
+
+        match result {
+            Ok(()) => {
+                if self.is_initializer {
+                    return Ok(Environment::get_at(&self.closure, 0, "this"))
+                }
+                Ok(Literal::Nil)
+            }
             // A Return signal from this body is the function's result, not an error.
-            Err(ExecSignal::Return { value, .. }) => Ok(value),
+            Err(ExecSignal::Return { value, .. }) => {
+                if self.is_initializer {
+                    return Ok(Environment::get_at(&self.closure, 0, "this"))
+                }
+                Ok(value)
+            }
             Err(ExecSignal::Runtime(error)) => Err(error),
         }
     }

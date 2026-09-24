@@ -2,6 +2,7 @@ use std::fmt;
 use crate::language::interpreter::Interpreter;
 use crate::language::token::Literal;
 use crate::util::errors::RuntimeError;
+use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use crate::language::callable::Callable;
 
@@ -14,7 +15,7 @@ impl Callable for Clock {
     }
 
     fn call(
-        &self,
+        self: Rc<Self>,
         _interpreter: &mut Interpreter,
         _arguments: Vec<Literal>,
     ) -> Result<Literal, RuntimeError> {
