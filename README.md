@@ -1,5 +1,6 @@
 # rlox
-A full implementation of Lox in Rust, with added arrays.
+A full implementation of [Lox](https://craftinginterpreters.com/contents.html) in Rust, with added arrays.
+Note: This is just the interpreter, not the VM.
 
 ## Arrays
 I added arrays to my Lox implementation. Below is a demo:
