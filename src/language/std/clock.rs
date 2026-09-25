@@ -1,6 +1,6 @@
 use std::fmt;
 use crate::language::interpreter::Interpreter;
-use crate::language::token::Literal;
+use crate::language::token::{Literal, Token};
 use crate::util::errors::RuntimeError;
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -18,6 +18,7 @@ impl Callable for Clock {
         self: Rc<Self>,
         _interpreter: &mut Interpreter,
         _arguments: Vec<Literal>,
+        _paren: &Token,
     ) -> Result<Literal, RuntimeError> {
         let seconds = SystemTime::now()
             .duration_since(UNIX_EPOCH)

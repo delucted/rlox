@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use crate::language::class::LoxInstance;
 use crate::language::interpreter::{ExecSignal, Interpreter};
-use crate::language::token::Literal;
+use crate::language::token::{Literal, Token};
 use std::fmt;
 use std::rc::Rc;
 use crate::language::environment::Environment;
@@ -15,6 +15,7 @@ pub trait Callable: fmt::Debug + fmt::Display {
         self: Rc<Self>,
         interpreter: &mut Interpreter,
         arguments: Vec<Literal>,
+        paren: &Token,
     ) -> Result<Literal, RuntimeError>;
 }
 
@@ -51,6 +52,7 @@ impl Callable for LoxFunction {
         self: Rc<Self>,
         interpreter: &mut Interpreter,
         arguments: Vec<Literal>,
+        _paren: &Token,
     ) -> Result<Literal, RuntimeError> {
         let Stmt::Function { params, body, .. } = &self.declaration else {
             unreachable!("LoxFunction must contain a function declaration");

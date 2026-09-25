@@ -10,6 +10,8 @@ use crate::language::token::{Literal, Token};
 use crate::language::token_type::TokenType;
 use crate::util::errors::RuntimeError;
 use crate::language::std::clock::Clock;
+use crate::language::std::len::Len;
+use crate::language::std::push::Push;
 
 #[derive(Debug)]
 pub enum ExecSignal {
@@ -36,6 +38,16 @@ impl Interpreter {
         globals.borrow_mut().define(
             String::from("clock"),
             Literal::Callable(Rc::new(Clock))
+        );
+
+        globals.borrow_mut().define(
+            String::from("len"),
+            Literal::Callable(Rc::new(Len))
+        );
+
+        globals.borrow_mut().define(
+            String::from("push"),
+            Literal::Callable(Rc::new(Push))
         );
 
         Self {
@@ -174,6 +186,41 @@ impl Interpreter {
 
             Expr::Variable { id, name } => self.look_up_variable(&name, id)?,
 
+            Expr::Index { object, bracket, index } => {
+                let object = self.evaluate(*object)?;
+                let index = self.evaluate(*index)?;
+
+                let Literal::Array(elements) = object else {
+                    return Err(RuntimeError {
+                        token: bracket,
+                        message: String::from("attempt to index non-array")
+                    })
+                };
+
+                let Literal::Number(n) = index else {
+                    return Err(RuntimeError {
+                        token: bracket,
+                        message: String::from("attempt to index array with a non-integer value")
+                    })
+                };
+
+                if n.fract() != 0.0 {
+                    return Err(RuntimeError {
+                        token: bracket,
+                        message: String::from("attempt to index array with a non-integer value")
+                    })
+                }
+
+                if n < 0.0 || n >= elements.borrow().len() as f64 {
+                    return Err(RuntimeError {
+                        token: bracket,
+                        message: String::from("array index out of bounds")
+                    })
+                }
+
+                elements.borrow()[n as usize].clone()
+            }
+
             Expr::Assign { id, name, value } => {
                 let value = self.evaluate(*value)?;
 
@@ -208,6 +255,40 @@ impl Interpreter {
 
                 let value = self.evaluate(*value)?;
                 LoxInstance::set(&instance, &name, value.clone());
+                value
+            }
+
+            Expr::SetIndex { object, index, eq, value } => {
+                let Literal::Array(array) = self.evaluate(*object)? else {
+                    return Err(RuntimeError {
+                        token: eq,
+                        message: String::from("only array indexes can be set")
+                    })
+                };
+                let Literal::Number(i) = self.evaluate(*index)? else {
+                    return Err(RuntimeError {
+                        token: eq,
+                        message: String::from("can only index arrays with integers")
+                    })
+                };
+
+                if i.fract() != 0.0 {
+                    return Err(RuntimeError {
+                        token: eq,
+                        message: String::from("can only index arrays with integers")
+                    })
+                }
+
+                let value = self.evaluate(*value)?;
+                let mut array = array.borrow_mut();
+                if i < 0.0 || i >= array.len() as f64 {
+                    return Err(RuntimeError {
+                        token: eq,
+                        message: String::from("array index out of bounds")
+                    })
+                };
+
+                array[i as usize] = value.clone();
                 value
             }
 
@@ -253,6 +334,14 @@ impl Interpreter {
                 self.evaluate(*right)?
             }
 
+            Expr::Array { elements } => {
+                let values: Rc<RefCell<Vec<Literal>>> = Rc::from(RefCell::from(Vec::new()));
+                for element in elements {
+                    values.borrow_mut().push(self.evaluate(*element)?);
+                }
+                return Ok(Literal::Array(values));
+            }
+
             Expr::Call { callee, paren, arguments } => {
                 let callee_value = self.evaluate(*callee)?;
 
@@ -281,7 +370,7 @@ impl Interpreter {
                     })
                 }
 
-                function.call(self, args)?
+                function.call(self, args, &paren)?
             }
         })
     }

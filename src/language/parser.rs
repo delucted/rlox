@@ -89,6 +89,34 @@ impl Parser {
                 Expr::Literal {value: self.previous().literal.as_ref().cloned().unwrap()}
             ))
         }
+        if self.match_next(&[TokenType::LeftBracket]) {
+            let mut elements: Vec<Box<Expr>> = Vec::new();
+            loop {
+                match self.peek().kind {
+                    TokenType::RightBracket => {
+                        self.advance();
+                        break
+                    },
+                    TokenType::Semicolon => {
+                        return Err(ParseError {
+                            token: self.peek().clone(),
+                            message: String::from("unterminated bracket")
+                        })
+                    }
+                    _ => {}
+                }
+                elements.push(Box::from(self.expression()?));
+                match self.peek().kind {
+                    TokenType::Comma => { self.advance(); }
+                    TokenType::RightBracket => {}
+                    _ => return Err(ParseError {
+                        token: self.peek().clone(),
+                        message: String::from("array elements not separated by commas")
+                    })
+                }
+            }
+            return Ok(Some(Expr::Array { elements }))
+        }
         if self.match_next(&[TokenType::This]) {
             return Ok(Some(Expr::This { id: next_expr_id(), keyword: self.previous().clone() }))
         }
@@ -173,6 +201,13 @@ impl Parser {
 
                 expr = Some(Expr::Get {
                     object: Box::from(expr.take().unwrap()), name
+                });
+            } else if self.match_next(&[TokenType::LeftBracket]) {
+                let bracket = self.previous().clone();
+                let index = self.expression()?;
+                self.consume(TokenType::RightBracket, "expect ']' after index");
+                expr = Some(Expr::Index {
+                    object: Box::from(expr.take().unwrap()), bracket, index: Box::from(index)
                 });
             } else {
                 break;
@@ -293,9 +328,11 @@ impl Parser {
                     return Ok(Expr::Assign { id: next_expr_id(), name, value: Box::from(value) }),
                 Expr::Get { object, name } =>
                     return Ok(Expr::Set { object, name, value: Box::from(value) }),
+                Expr::Index { object, index, .. } =>
+                    return Ok(Expr::SetIndex { object, index, eq: equals, value: Box::from(value) }),
                 _=>{}
             };
-            
+
             self.errors.push(ParseError {
                 token: equals.clone(),
                 message: "invalid assignment target".to_string()

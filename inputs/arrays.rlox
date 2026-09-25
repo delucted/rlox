@@ -1,0 +1,10 @@
+var array = [1, 2, 3];
+
+print array[1]; // 2
+array[2] = 1;
+print array[2]; // 1
+
+print len(array); // 3
+
+push(array, 5);
+print array; // [1, 2, 1, 5]

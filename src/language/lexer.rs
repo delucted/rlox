@@ -161,6 +161,8 @@ impl Lexer {
         match c {
             '(' => self.token(TokenType::LeftParen),
             ')' => self.token(TokenType::RightParen),
+            '[' => self.token(TokenType::LeftBracket),
+            ']' => self.token(TokenType::RightBracket),
             '{' => self.token(TokenType::LeftBrace),
             '}' => self.token(TokenType::RightBrace),
             ',' => self.token(TokenType::Comma),
