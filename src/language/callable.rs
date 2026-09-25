@@ -77,7 +77,6 @@ impl Callable for LoxFunction {
                 }
                 Ok(Literal::Nil)
             }
-            // A Return signal from this body is the function's result, not an error.
             Err(ExecSignal::Return { value, .. }) => {
                 if self.is_initializer {
                     return Ok(Environment::get_at(&self.closure, 0, "this"))

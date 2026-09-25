@@ -1,5 +1,5 @@
 # rlox
-Implementation of Lox in Rust.
+A full implementation of Lox in Rust, with added arrays.
 
 ## Arrays
 I added arrays to my Lox implementation. Below is a demo:
@@ -25,3 +25,5 @@ print push(string, " world!"); // Hello world!
 print string; // Hello (strings are immutable)
 print len(string); // 5
 ```
+
+Something I would add in the future is for-each loops (which would involve iterator work) and hashmaps (dicts).
